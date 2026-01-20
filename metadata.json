@@ -1,0 +1,7 @@
+{
+  "name": "HerSpace - 职场女性心灵避风港",
+  "description": "HerSpace 是一款专为职场女性设计的解压应用，提供‘3分钟精神离职’、‘吐槽碎纸机’和‘职场树洞’等功能，帮助用户在繁忙的职业生活中找回自我与平静。",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
