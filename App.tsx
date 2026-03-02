@@ -1,263 +1,220 @@
+import React, { useMemo, useState } from 'react';
 
-import React, { useState, useEffect, useRef } from 'react';
-import { AppTab, User, PointItem } from './types';
-import Layout from './components/Layout';
-import MentalQuitting from './components/MentalQuitting';
-import VentShredder from './components/VentShredder';
-import TreeHole from './components/TreeHole';
-import SituationalTools from './components/SituationalTools';
-import PointsStore from './components/PointsStore';
-import Auth from './components/Auth';
-import OnboardingTutorial from './components/OnboardingTutorial';
+type DishType = '荤菜' | '素菜';
 
-const IDLE_BOSSES = ['👔', '👨‍💼', '💼', '👹', '🐷', '🤡'];
-const HURT_BOSSES = ['🤕', '🥴', '😵', '🩹', '🩸', '💀'];
+type Dish = {
+  id: string;
+  name: string;
+  type: DishType;
+  priceCny: number;
+  romanticPrice: string;
+};
 
-const StressReliever: React.FC<{ onPunch: () => void }> = ({ onPunch }) => {
-  const [bossIndex, setBossIndex] = useState(0);
-  const [isHurt, setIsHurt] = useState(false);
-  const [animKey, setAnimKey] = useState(0);
-  const [combo, setCombo] = useState(0);
-  const [hp, setHp] = useState(100);
+type Cuisine = {
+  id: string;
+  name: string;
+  dishes: Dish[];
+};
 
-  const HIT_SOUNDS = [
-    'https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3',
-    'https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3',
-    'https://assets.mixkit.co/active_storage/sfx/2567/2567-preview.mp3'
-  ];
+type CartItem = Dish & { quantity: number; cuisine: string };
 
-  const playHitSound = () => {
-    const audio = new Audio(HIT_SOUNDS[Math.floor(Math.random() * HIT_SOUNDS.length)]);
-    audio.volume = 0.6;
-    audio.play().catch(() => {});
-  };
+const ROMANTIC_PRICE_RULES: Array<{ max: number; label: string }> = [
+  { max: 20, label: '一个吻 😘' },
+  { max: 35, label: '一个抱抱 🤗' },
+  { max: 50, label: '一起散步30分钟 🚶‍♀️🚶' },
+  { max: 65, label: '一次手作早餐 🍳' },
+  { max: 85, label: '一次肩颈按摩 💆' },
+  { max: 120, label: '一次电影之夜 🎬' },
+  { max: 160, label: '一次惊喜约会 🎁' },
+  { max: Infinity, label: '家务全包一天 🧹' },
+];
 
-  const handlePunch = (e: React.MouseEvent | React.TouchEvent) => {
-    e.stopPropagation();
-    if (e.cancelable) e.preventDefault();
+const CUISINES = [
+  '浙菜',
+  '徽菜',
+  '豫菜',
+  '湘菜',
+  '赣菜',
+  '川菜',
+  '粤菜',
+  '东北菜',
+  '西餐',
+  '面点',
+  '炸鸡系列',
+  '寿司系列',
+  '奶茶系列',
+  '果饮系列',
+  '家常菜',
+];
 
-    setIsHurt(true);
-    setCombo(prev => prev + 1);
-    setAnimKey(prev => prev + 1);
-    setHp(prev => (prev <= 5 ? 100 : prev - 5));
-    onPunch();
-    playHitSound();
+const meatSuffix = ['小炒', '煲', '香锅', '拌饭', '拼盘', '焗饭', '炖盅', '卷', '炙烤', '套餐'];
+const vegSuffix = ['时蔬', '豆腐', '沙拉', '菌菇盅', '凉拌', '蒸品', '面', '汤', '饭', '甜品'];
 
-    setTimeout(() => {
-      setIsHurt(false);
-      if (Math.random() > 0.8) {
-        setBossIndex(Math.floor(Math.random() * IDLE_BOSSES.length));
+const baseNames: Record<string, { meat: string[]; veg: string[] }> = {
+  浙菜: { meat: ['东坡', '龙井虾仁', '绍兴黄酒鸡', '杭帮酱鸭', '雪菜黄鱼'], veg: ['西湖莼菜', '清炒笋尖', '桂花糖藕', '腐竹木耳', '梅干菜豆角'] },
+  徽菜: { meat: ['臭鳜鱼', '黄山炖鸽', '胡适一品锅', '毛豆腐烩肉', '徽州刀板香'], veg: ['问政山笋', '石耳炖蛋', '黄山野菜', '清炒蕨菜', '徽州双冬'] },
+  豫菜: { meat: ['汴京扒肉', '洛阳水席', '葱烧羊肉', '红焖肘子', '道口烧鸡'], veg: ['开封素三鲜', '河南烩面素卤', '番茄豆腐', '芝麻叶豆面', '香菇青菜'] },
+  湘菜: { meat: ['剁椒鱼头', '小炒黄牛肉', '辣椒炒肉', '湘西腊肉', '口味虾'], veg: ['擂椒皮蛋', '手撕包菜', '蒜蓉空心菜', '湘味豆干', '酸辣藕片'] },
+  赣菜: { meat: ['藜蒿炒腊肉', '三杯鸡', '宁都肉丸', '鄱阳湖鱼块', '瓦罐排骨'], veg: ['井冈山豆皮', '南昌凉拌藕', '赣南南瓜', '清炒苦瓜', '瓦罐萝卜'] },
+  川菜: { meat: ['回锅肉', '宫保鸡丁', '水煮牛肉', '麻婆豆腐牛肉末', '夫妻肺片'], veg: ['鱼香茄子', '麻辣土豆丝', '干煸四季豆', '凉拌木耳', '椒麻杏鲍菇'] },
+  粤菜: { meat: ['蜜汁叉烧', '豉汁蒸排骨', '白切鸡', '烧鹅拼盘', '避风塘虾'], veg: ['上汤娃娃菜', '蚝油生菜', '陈皮豆腐', '西芹百合', '罗汉斋'] },
+  东北菜: { meat: ['锅包肉', '地三鲜肉版', '铁锅炖大鹅', '溜肉段', '小鸡炖蘑菇'], veg: ['地三鲜', '酸菜粉条', '凉拌拉皮', '蘸酱菜', '东北大拌菜'] },
+  西餐: { meat: ['黑椒牛排', '香煎鸡排', '番茄肉酱意面', '烤肠拼盘', '奶油培根饭'], veg: ['凯撒沙拉', '焗蘑菇', '南瓜浓汤', '芝士玉米', '蒜香烤蔬'] },
+  面点: { meat: ['牛肉拉面', '猪肉煎饺', '叉烧包', '鸡丝凉面', '牛肉锅贴'], veg: ['素三鲜水饺', '葱油拌面', '香菇菜包', '南瓜发糕', '红豆小圆子'] },
+  炸鸡系列: { meat: ['经典原味炸鸡', '韩式甜辣鸡', '蒜香脆鸡块', '蜜汁鸡翅', '黑椒鸡柳'], veg: ['脆薯拼盘', '洋葱圈', '芝士玉米球', '蔬菜可乐饼', '炸杏鲍菇'] },
+  寿司系列: { meat: ['三文鱼握寿司', '鳗鱼卷', '金枪鱼军舰', '炙烤牛肉卷', '天妇罗虾卷'], veg: ['牛油果卷', '黄瓜卷', '玉米沙拉军舰', '豆皮寿司', '素食拼盘'] },
+  奶茶系列: { meat: ['芝士奶盖厚乳', '黑糖珍珠奶茶', '抹茶红豆奶', '焦糖布丁奶茶', '可可榛果奶'], veg: ['茉莉轻乳茶', '乌龙鲜奶', '椰椰冻冻', '桂花乌龙奶', '低糖麦香奶'] },
+  果饮系列: { meat: ['西柚多多', '草莓酸奶昔', '芒果冰沙', '百香果气泡饮', '葡萄冻冻'], veg: ['青提茉莉', '柠檬薄荷茶', '苹果胡萝卜汁', '牛油果酸奶', '羽衣甘蓝果昔'] },
+  家常菜: { meat: ['红烧肉', '可乐鸡翅', '番茄牛腩', '青椒肉丝', '糖醋里脊'], veg: ['番茄炒蛋', '麻婆豆腐', '清炒西兰花', '醋溜土豆丝', '蒜蓉生菜'] },
+};
+
+const romanticLabel = (price: number) => ROMANTIC_PRICE_RULES.find((rule) => price <= rule.max)?.label ?? '甜蜜加成';
+
+const makeCuisine = (name: string): Cuisine => {
+  const data = baseNames[name];
+  const dishes: Dish[] = [];
+  for (let i = 0; i < 10; i += 1) {
+    const base = data.meat[i % data.meat.length];
+    const priceCny = 28 + i * 6 + (name.length % 5) * 3;
+    dishes.push({
+      id: `${name}-m-${i}`,
+      name: `${base}${meatSuffix[i % meatSuffix.length]}`,
+      type: '荤菜',
+      priceCny,
+      romanticPrice: romanticLabel(priceCny),
+    });
+  }
+  for (let i = 0; i < 10; i += 1) {
+    const base = data.veg[i % data.veg.length];
+    const priceCny = 18 + i * 5 + (name.length % 3) * 2;
+    dishes.push({
+      id: `${name}-v-${i}`,
+      name: `${base}${vegSuffix[i % vegSuffix.length]}`,
+      type: '素菜',
+      priceCny,
+      romanticPrice: romanticLabel(priceCny),
+    });
+  }
+  return { id: name, name, dishes };
+};
+
+const menuData: Cuisine[] = CUISINES.map(makeCuisine);
+
+export default function App() {
+  const [activeCuisine, setActiveCuisine] = useState(menuData[0].id);
+  const [cart, setCart] = useState<CartItem[]>([]);
+  const [paid, setPaid] = useState(false);
+  const [orderNo, setOrderNo] = useState('');
+
+  const currentCuisine = useMemo(() => menuData.find((c) => c.id === activeCuisine)!, [activeCuisine]);
+
+  const addToCart = (dish: Dish) => {
+    if (paid) return;
+    setCart((prev) => {
+      const existing = prev.find((item) => item.id === dish.id);
+      if (existing) {
+        return prev.map((item) => (item.id === dish.id ? { ...item, quantity: item.quantity + 1 } : item));
       }
-    }, 150);
+      return [...prev, { ...dish, quantity: 1, cuisine: currentCuisine.name }];
+    });
   };
 
-  useEffect(() => {
-    const timer = setTimeout(() => setCombo(0), 1500);
-    return () => clearTimeout(timer);
-  }, [combo]);
+  const updateQty = (id: string, delta: number) => {
+    if (paid) return;
+    setCart((prev) => prev.map((item) => (item.id === id ? { ...item, quantity: Math.max(0, item.quantity + delta) } : item)).filter((i) => i.quantity > 0));
+  };
+
+  const total = cart.reduce((sum, item) => sum + item.priceCny * item.quantity, 0);
+
+  const checkout = () => {
+    if (!cart.length || paid) return;
+    const ok = window.confirm(`本次需一次性结算 ¥${total}（不可拆单）。确认立即支付吗？`);
+    if (!ok) return;
+    setPaid(true);
+    setOrderNo(`GF${Date.now().toString().slice(-8)}`);
+  };
 
   return (
-    <div className="relative w-full group select-none">
-      <div className="absolute inset-0 bg-gradient-to-br from-[#1a1a1a] to-[#2d2d2d] rounded-[3.5rem] transform translate-y-3 blur-sm"></div>
-      
-      <div className="relative bg-[#121212] p-8 rounded-[3.5rem] flex flex-col items-center gap-6 overflow-hidden border border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.5)]">
-        <div className="absolute -top-24 -left-24 w-64 h-64 bg-[#A68D85]/10 rounded-full blur-[80px] pointer-events-none"></div>
-        <div className="absolute -bottom-24 -right-24 w-64 h-64 bg-[#EBD8D0]/5 rounded-full blur-[80px] pointer-events-none"></div>
+    <div className="min-h-screen bg-rose-50 text-slate-800">
+      <header className="p-4 md:p-6 bg-white shadow-sm sticky top-0 z-10">
+        <h1 className="text-2xl font-bold">女朋友专属点餐小程序 💖</h1>
+        <p className="text-sm text-slate-600">按菜系点菜，每个菜系 20 道（荤素均衡），支持一次性真实结算。</p>
+      </header>
 
-        <div className="w-full flex justify-between items-center z-10 px-4">
-          <div className="flex flex-col">
-            <h3 className="text-white text-lg serif font-black tracking-tighter uppercase italic">捶死小人</h3>
-            <div className="flex items-center gap-2">
-               <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
-               <span className="text-[10px] text-zinc-500 font-bold tracking-widest uppercase">System Stabilized</span>
-            </div>
+      <main className="grid md:grid-cols-[260px_1fr_360px] gap-4 p-4 md:p-6">
+        <aside className="bg-white rounded-xl p-3 shadow-sm h-fit">
+          <h2 className="font-semibold mb-2">菜系列表</h2>
+          <div className="grid grid-cols-2 md:grid-cols-1 gap-2">
+            {menuData.map((c) => (
+              <button
+                key={c.id}
+                className={`px-3 py-2 rounded-lg text-left text-sm ${activeCuisine === c.id ? 'bg-rose-500 text-white' : 'bg-rose-100'}`}
+                onClick={() => setActiveCuisine(c.id)}
+              >
+                {c.name}
+              </button>
+            ))}
           </div>
-          <div className="bg-white/5 border border-white/10 px-3 py-1 rounded-full">
-            <span className="text-[10px] text-zinc-400 font-black uppercase">Level 0{Math.floor(combo/10) + 1}</span>
+        </aside>
+
+        <section className="bg-white rounded-xl p-4 shadow-sm">
+          <h2 className="text-xl font-semibold mb-1">{currentCuisine.name}</h2>
+          <p className="text-sm text-slate-500 mb-4">共 {currentCuisine.dishes.length} 道菜（荤菜 10 + 素菜 10）</p>
+          <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-3">
+            {currentCuisine.dishes.map((dish) => (
+              <div key={dish.id} className="border rounded-lg p-3">
+                <div className="flex justify-between gap-2">
+                  <h3 className="font-medium">{dish.name}</h3>
+                  <span className={`text-xs px-2 py-1 rounded ${dish.type === '荤菜' ? 'bg-amber-100' : 'bg-emerald-100'}`}>{dish.type}</span>
+                </div>
+                <p className="text-sm mt-1">¥{dish.priceCny}</p>
+                <p className="text-xs text-rose-500 mt-1">情侣价：{dish.romanticPrice}</p>
+                <button onClick={() => addToCart(dish)} className="mt-3 w-full bg-slate-900 text-white text-sm py-1.5 rounded disabled:opacity-40" disabled={paid}>
+                  {paid ? '已锁单' : '加入购物车'}
+                </button>
+              </div>
+            ))}
           </div>
-        </div>
+        </section>
 
-        <div 
-          className="relative z-10 cursor-pointer h-64 w-full flex items-center justify-center touch-manipulation perspective-1000" 
-          onMouseDown={handlePunch}
-          onTouchStart={handlePunch}
-        >
-          <div className={`absolute w-48 h-48 rounded-full border-2 border-white/5 transition-all duration-300 ${isHurt ? 'scale-150 opacity-0' : 'scale-100 opacity-100'}`}></div>
-          <div className={`absolute w-56 h-56 rounded-full border border-dashed border-white/10 ${isHurt ? 'animate-spin-slow' : ''}`}></div>
-
-          <div 
-            key={animKey}
-            className={`text-[130px] transition-all duration-75 select-none drop-shadow-[0_0_20px_rgba(255,255,255,0.1)]
-              ${isHurt ? 'anim-shake scale-125' : 'hover:scale-105 active:scale-90'}`}
-          >
-            {isHurt ? HURT_BOSSES[bossIndex % HURT_BOSSES.length] : IDLE_BOSSES[bossIndex]}
+        <aside className="bg-white rounded-xl p-4 shadow-sm h-fit">
+          <h2 className="text-lg font-semibold">订单结算</h2>
+          <p className="text-xs text-slate-500 mb-3">结算规则：仅支持一次性支付，不可分次。</p>
+          <div className="space-y-2 max-h-[420px] overflow-auto pr-1">
+            {cart.length === 0 && <p className="text-sm text-slate-500">还没有选菜～</p>}
+            {cart.map((item) => (
+              <div key={item.id} className="border rounded-lg p-2">
+                <p className="text-sm font-medium">{item.name}</p>
+                <p className="text-xs text-slate-500">{item.cuisine} · {item.romanticPrice}</p>
+                <div className="flex items-center justify-between mt-1">
+                  <span className="text-sm">¥{item.priceCny * item.quantity}</span>
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => updateQty(item.id, -1)} className="px-2 rounded bg-slate-100" disabled={paid}>-</button>
+                    <span className="text-sm">{item.quantity}</span>
+                    <button onClick={() => updateQty(item.id, 1)} className="px-2 rounded bg-slate-100" disabled={paid}>+</button>
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
 
-          {isHurt && (
-            <div className="absolute top-10 right-4 animate-in slide-in-from-bottom-4 fade-out duration-500 pointer-events-none">
-              <span className="text-4xl font-black italic text-[#EBD8D0] drop-shadow-lg">CRITICAL!</span>
+          <div className="mt-4 border-t pt-3 space-y-2">
+            <div className="flex justify-between font-semibold">
+              <span>合计</span>
+              <span>¥{total}</span>
             </div>
-          )}
-        </div>
-
-        <div className="w-full z-10 px-4 space-y-4">
-          <div className="space-y-1">
-            <div className="flex justify-between items-end text-[10px] font-black uppercase tracking-widest text-zinc-500">
-              <span>Hostility Integrity</span>
-              <span className={hp < 20 ? 'text-red-500 animate-pulse' : 'text-zinc-300'}>{hp}%</span>
-            </div>
-            <div className="h-1.5 w-full bg-zinc-800 rounded-full overflow-hidden border border-white/5">
-              <div 
-                className={`h-full transition-all duration-300 ${hp < 20 ? 'bg-red-600' : 'bg-gradient-to-r from-[#A68D85] to-[#EBD8D0]'}`}
-                style={{ width: `${hp}%` }}
-              ></div>
-            </div>
-          </div>
-
-          <div className="flex justify-between items-center h-10">
-            <div className="text-[10px] text-zinc-600 font-bold uppercase tracking-tighter">Click to Release Stress</div>
-            {combo > 1 && (
-              <div className="flex items-center gap-2 bg-gradient-to-r from-red-600 to-orange-500 px-4 py-1.5 rounded-full shadow-[0_0_20px_rgba(239,68,68,0.4)] animate-in zoom-in-95">
-                <span className="text-white font-black text-xs italic tracking-widest">COMBO X{combo}</span>
-                <span className="text-white/70 text-[10px]">🔥</span>
+            <button onClick={checkout} disabled={!cart.length || paid} className="w-full bg-rose-500 text-white py-2 rounded disabled:opacity-40">
+              {paid ? '已完成一次性结算' : '一次性结算'}
+            </button>
+            {paid && (
+              <div className="bg-emerald-50 border border-emerald-200 rounded p-2 text-sm">
+                <p>✅ 支付成功，订单号：{orderNo}</p>
+                <p>结算金额：¥{total}（已锁单）</p>
               </div>
             )}
           </div>
-        </div>
-      </div>
+        </aside>
+      </main>
     </div>
   );
-};
-
-const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<AppTab>(AppTab.HOME);
-  const [user, setUser] = useState<User>(() => {
-    const saved = localStorage.getItem('herspace_user');
-    return saved ? JSON.parse(saved) : { username: '', points: 100, isLoggedIn: false };
-  });
-
-  // 管理已经看过的功能教程标签页
-  const [seenTutorials, setSeenTutorials] = useState<Set<AppTab>>(() => {
-    const saved = localStorage.getItem('hs_seen_tab_tutorials');
-    return saved ? new Set(JSON.parse(saved)) : new Set();
-  });
-
-  // 控制当前是否显示教程遮罩
-  const [showTutorial, setShowTutorial] = useState(false);
-
-  const userNickname = localStorage.getItem('hs_nickname') || user.username || '访客';
-
-  useEffect(() => {
-    localStorage.setItem('herspace_user', JSON.stringify(user));
-  }, [user]);
-
-  useEffect(() => {
-    localStorage.setItem('hs_seen_tab_tutorials', JSON.stringify(Array.from(seenTutorials)));
-  }, [seenTutorials]);
-
-  // 当标签页切换时，检查是否需要显示教程
-  useEffect(() => {
-    if (user.isLoggedIn && !seenTutorials.has(activeTab)) {
-      setShowTutorial(true);
-    } else {
-      setShowTutorial(false);
-    }
-  }, [activeTab, user.isLoggedIn, seenTutorials]);
-
-  const onUpdateUser = (updates: Partial<User>) => {
-    setUser(prev => ({ ...prev, ...updates }));
-  };
-
-  const handleLogin = (username: string) => {
-    setUser({ username, points: 100, isLoggedIn: true });
-    setActiveTab(AppTab.HOME);
-  };
-
-  const handleTutorialComplete = () => {
-    setSeenTutorials(prev => new Set(prev).add(activeTab));
-    setShowTutorial(false);
-  };
-
-  const handleCheckIn = () => {
-    const today = new Date().toDateString();
-    if (user.lastCheckIn === today) {
-      alert("今天已经签过到了，休息片刻吧。☕️");
-      return;
-    }
-    onUpdateUser({ points: user.points + 50, lastCheckIn: today });
-    alert("能量注入！获得 50 pts ✨");
-  };
-
-  const handleExchange = (item: PointItem) => {
-    if (user.points < item.cost) return;
-    onUpdateUser({ points: user.points - item.cost });
-    alert(`成功兑换 ${item.name}！🥂`);
-  };
-
-  const renderContent = () => {
-    if (!user.isLoggedIn) {
-      return <Auth onLogin={handleLogin} />;
-    }
-
-    switch (activeTab) {
-      case AppTab.HOME:
-        return (
-          <div className="space-y-8 animate-in fade-in duration-1000 pb-24">
-            <div className="mt-8 flex justify-between items-start px-2">
-              <div className="flex-1">
-                <h2 className="text-3xl serif font-bold text-[#4A443F] leading-tight mb-2">
-                  嗨，{userNickname}，<br/>
-                  尽情发泄吧。🥊
-                </h2>
-                <p className="text-[11px] text-[#8E837D] font-bold tracking-tight uppercase opacity-70">Privately secured mental sanctuary</p>
-              </div>
-              <button onClick={handleCheckIn} className="flex-shrink-0 px-4 py-2 bg-white border border-[#A68D85]/10 rounded-full text-[10px] font-black text-[#A68D85] active:scale-95 shadow-sm transition-all uppercase tracking-widest">
-                {user.lastCheckIn === new Date().toDateString() ? 'Active ✅' : 'Charge +50'}
-              </button>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4 px-2">
-              <QuickAction title="3分钟离职" subtitle="静谧冥想" icon="🧘‍♀️" onClick={() => setActiveTab(AppTab.MEDITATE)} color="bg-[#EBD8D0]" />
-              <QuickAction title="吐槽碎纸机" subtitle="优雅黑话" icon="✂️" onClick={() => setActiveTab(AppTab.SHREDDER)} color="bg-[#C8D3C5]" />
-            </div>
-
-            <div className="px-2">
-              <StressReliever onPunch={() => onUpdateUser({ points: user.points + 0.5 })} />
-            </div>
-
-            <div className="mx-2 p-8 rounded-[3rem] bg-[#8E837D] text-white relative overflow-hidden shadow-2xl group cursor-pointer" onClick={() => setActiveTab(AppTab.TREEHOLE)}>
-               <h3 className="text-lg serif mb-4 italic leading-relaxed relative z-10 font-bold">“哪怕是一束微光，也能照亮通往自由的小径。✨”</h3>
-               <button className="px-6 py-2 bg-white/20 hover:bg-white/30 rounded-full text-[10px] transition-all tracking-[0.2em] uppercase font-black relative z-10 border border-white/10">进入共助树洞</button>
-               <div className="absolute -bottom-8 -right-8 opacity-10 rotate-12 text-[12rem] group-hover:scale-110 transition-transform duration-1000">🌿</div>
-            </div>
-          </div>
-        );
-      case AppTab.MEDITATE: return <MentalQuitting />;
-      case AppTab.SHREDDER: return <VentShredder />;
-      case AppTab.TREEHOLE: return <TreeHole user={user} onUpdateUser={onUpdateUser} />;
-      case AppTab.TOOLS: return <SituationalTools />;
-      case AppTab.STORE: return <PointsStore user={user} onExchange={handleExchange} />;
-      default: return null;
-    }
-  };
-
-  return (
-    <Layout activeTab={activeTab} onTabChange={setActiveTab}>
-      {renderContent()}
-      {showTutorial && <OnboardingTutorial tab={activeTab} onComplete={handleTutorialComplete} />}
-    </Layout>
-  );
-};
-
-const QuickAction: React.FC<{ title: string; subtitle: string; icon: string; onClick: () => void; color: string }> = ({ title, subtitle, icon, onClick, color }) => (
-  <button onClick={onClick} className={`${color} p-6 rounded-[2.5rem] text-left flex flex-col justify-between h-44 active:scale-95 transition-all shadow-sm border border-white/30 hover:shadow-lg group relative overflow-hidden`}>
-    <span className="text-5xl group-hover:scale-110 transition-transform z-10">{icon}</span>
-    <div className="z-10">
-      <h4 className="font-black text-[#4A443F] text-sm mb-0.5">{title}</h4>
-      <p className="text-[10px] opacity-60 uppercase tracking-tighter font-black">{subtitle}</p>
-    </div>
-    <div className="absolute top-0 right-0 w-24 h-24 bg-white/10 rounded-full -translate-y-8 translate-x-8"></div>
-  </button>
-);
-
-export default App;
+}
